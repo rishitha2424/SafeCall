@@ -184,12 +184,14 @@ export class EmailService {
     // 1. If SENDGRID_API_KEY is configured, dispatch via SendGrid REST API (Port 443 HTTPS - works on Render Free Tier)
     if (process.env.SENDGRID_API_KEY) {
       try {
-        const rawFrom = process.env.SENDGRID_FROM || process.env.EMAIL_FROM || config.smtp.user || 'SafeFamily Alert <alerts@mobileum.com>';
+        const rawFrom = process.env.SENDGRID_FROM || process.env.EMAIL_FROM || config.smtp.user || 'SafeFamily Alert <noreply@safecall.app>';
         const emailMatch = rawFrom.match(/<([^>]+)>/) || [null, rawFrom.trim()];
         const cleanFromEmail = (emailMatch[1] || rawFrom).trim();
         const fromName = rawFrom.includes('<') ? rawFrom.split('<')[0].replace(/"/g, '').trim() : 'SafeFamily Telecom Security';
 
-        const payload = {
+        console.log(`[EmailService] SendGrid From: "${fromName}" <${cleanFromEmail}> → To: ${validRecipients.join(', ')}`);
+
+        const payload: Record<string, any> = {
           personalizations: [
             {
               to: validRecipients.map((email) => ({ email: email.trim() })),
@@ -212,6 +214,12 @@ export class EmailService {
           ],
         };
 
+        // Add reply_to if configured (allows separating sending identity from reply destination)
+        const replyToEnv = process.env.SENDGRID_REPLY_TO;
+        if (replyToEnv && replyToEnv.includes('@')) {
+          payload.reply_to = { email: replyToEnv.trim() };
+        }
+
         const sgRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
           method: 'POST',
           headers: {
@@ -223,13 +231,13 @@ export class EmailService {
 
         if (sgRes.status === 202 || sgRes.ok) {
           const messageId = sgRes.headers.get('x-message-id') || `SG-${Date.now().toString(36).toUpperCase()}`;
-          console.log(`[EmailService] ✅ Email dispatched via SendGrid HTTPS API: ${messageId}`);
+          console.log(`[EmailService] ✅ Email accepted by SendGrid API (ID: ${messageId}). Note: 'Accepted' means SendGrid will attempt delivery; check SendGrid Activity for final delivery/bounce/block status.`);
           return {
             success: true,
             recipients: validRecipients,
             subject,
             messageId,
-            response: 'Delivered via SendGrid REST API (Port 443)',
+            response: 'Accepted by SendGrid REST API (Port 443). Check SendGrid Activity for delivery status.',
           };
         } else {
           let errorText = '';
@@ -239,25 +247,21 @@ export class EmailService {
           } catch {
             errorText = await sgRes.text();
           }
-          console.error('[EmailService] SendGrid API Error:', sgRes.status, errorText);
-          const simMessageId = `SG-SIM-${Date.now().toString(36).toUpperCase()}`;
+          console.error(`[EmailService] ❌ SendGrid API rejected request (HTTP ${sgRes.status}): ${errorText}`);
           return {
-            success: true,
+            success: false,
             recipients: validRecipients,
             subject,
-            messageId: simMessageId,
-            response: `Accepted by SendGrid Gateway (${errorText || 'Verified'})`,
+            error: `SendGrid API error (HTTP ${sgRes.status}): ${errorText}`,
           };
         }
       } catch (sgErr: any) {
-        console.error('[EmailService] SendGrid network error:', sgErr);
-        const simMessageId = `SG-SIM-${Date.now().toString(36).toUpperCase()}`;
+        console.error('[EmailService] ❌ SendGrid network error:', sgErr.message || sgErr);
         return {
-          success: true,
+          success: false,
           recipients: validRecipients,
           subject,
-          messageId: simMessageId,
-          response: 'Accepted by SendGrid Gateway (Simulated)',
+          error: `SendGrid network error: ${sgErr.message || 'Connection failed'}`,
         };
       }
     }
