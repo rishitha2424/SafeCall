@@ -25,7 +25,7 @@ services:
       - key: SENDGRID_API_KEY
         sync: false
       - key: SENDGRID_FROM
-        value: '"SafeFamily Alert" <risghithathoka@gmail.com>'
+        value: '"SafeFamily Alert" <rishitha.thoka@mobileum.com>'
       - key: EMAIL_FROM
-        value: '"SafeFamily Telecom Security" <risghithathoka@gmail.com>'
+        value: '"SafeFamily Telecom Security" <rishitha.thoka@mobileum.com>'
 
