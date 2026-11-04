@@ -5,6 +5,7 @@ import fs from 'fs';
 import { config } from './config.js';
 import { excelService } from './excelService.js';
 import { emailService } from './emailService.js';
+import { cloudStorage } from './cloudStorageService.js';
 import { apiRouter } from './routes/api.js';
 
 const app = express();
@@ -74,7 +75,15 @@ async function startServer() {
     await excelService.initialize();
     console.log(`[Startup] Excel database active at: ${excelService.getFilePath()}`);
 
-    // 2. Check SMTP status
+    // 2. Check Cloud Storage status
+    const storageStatus = cloudStorage.getStatus();
+    if (storageStatus.configured) {
+      console.log(`[Startup] ☁️ Cloud Storage Sync ACTIVE: ${storageStatus.provider} (Bucket: '${storageStatus.bucket}')`);
+    } else {
+      console.log('[Startup] 📁 Cloud Storage Sync not configured. Running with local Excel workbook.');
+    }
+
+    // 3. Check SMTP status
     const smtpStatus = emailService.getSmtpStatus();
     if (smtpStatus.configured) {
       console.log(`[Startup] SMTP is configured (${smtpStatus.host}:${smtpStatus.port}, user: ${smtpStatus.user})`);

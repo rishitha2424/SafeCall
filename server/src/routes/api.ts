@@ -3,6 +3,7 @@ import { excelService } from '../excelService.js';
 import { emailService } from '../emailService.js';
 import { smsService } from '../smsService.js';
 import { spamEngine } from '../spamEngine.js';
+import { cloudStorage } from '../cloudStorageService.js';
 import {
   Subscriber,
   ParentChildMapping,
@@ -680,6 +681,19 @@ apiRouter.get('/smtp-status', async (_req: Request, res: Response) => {
       success: true,
       status,
       connection: verify,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// --- CLOUD STORAGE SYNC STATUS ---
+apiRouter.get('/storage-status', async (_req: Request, res: Response) => {
+  try {
+    const status = cloudStorage.getStatus();
+    return res.json({
+      success: true,
+      status,
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });

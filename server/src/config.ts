@@ -54,4 +54,10 @@ export const config = {
     isConfigured: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
   },
   simulationStepDelayMs: parseInt(process.env.SIMULATION_STEP_DELAY_MS || '200', 10),
+  cloudStorage: {
+    supabaseUrl: process.env.SUPABASE_URL || '',
+    supabaseKey: process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    supabaseBucket: process.env.SUPABASE_BUCKET || 'safefamily',
+    isConfigured: Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)),
+  },
 };

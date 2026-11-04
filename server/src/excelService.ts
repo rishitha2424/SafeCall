@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import fs from 'fs';
 import path from 'path';
 import { config } from './config.js';
+import { cloudStorage } from './cloudStorageService.js';
 import {
   Subscriber,
   ParentChildMapping,
@@ -144,6 +145,12 @@ export class ExcelService {
         fs.mkdirSync(dir, { recursive: true });
       }
 
+      // Check cloud storage first to restore latest workbook across container restarts
+      let restoredFromCloud = false;
+      if (cloudStorage.isConfigured()) {
+        restoredFromCloud = await cloudStorage.downloadWorkbook(this.filePath);
+      }
+
       if (!fs.existsSync(this.filePath)) {
         console.log(`[ExcelService] Creating demo database workbook at ${this.filePath}...`);
         const workbook = new ExcelJS.Workbook();
@@ -153,6 +160,9 @@ export class ExcelService {
         this.populateDefaultSheets(workbook);
         await workbook.xlsx.writeFile(this.filePath);
         console.log(`[ExcelService] Initialized demo workbook successfully.`);
+        if (cloudStorage.isConfigured()) {
+          await cloudStorage.uploadWorkbook(this.filePath);
+        }
       } else {
         // Validate existing sheets and ensure all exist
         const workbook = new ExcelJS.Workbook();
@@ -201,6 +211,12 @@ export class ExcelService {
 
         if (modified) {
           await workbook.xlsx.writeFile(this.filePath);
+          if (cloudStorage.isConfigured()) {
+            await cloudStorage.uploadWorkbook(this.filePath);
+          }
+        } else if (!restoredFromCloud && cloudStorage.isConfigured()) {
+          // If cloud has no copy yet, upload local file so future restarts retain it
+          await cloudStorage.uploadWorkbook(this.filePath);
         }
       }
     });
@@ -688,6 +704,16 @@ export class ExcelService {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         await workbook.xlsx.writeFile(this.filePath);
+
+        // Automatically sync updated workbook to cloud storage
+        if (cloudStorage.isConfigured()) {
+          try {
+            await cloudStorage.uploadWorkbook(this.filePath);
+          } catch (cloudErr: any) {
+            console.warn('[ExcelService] Notice: Cloud storage sync failed:', cloudErr.message);
+          }
+        }
+
         return;
       } catch (err: any) {
         if (err.code === 'EBUSY' && attempt < maxRetries) {
