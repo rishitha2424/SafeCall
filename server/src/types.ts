@@ -66,7 +66,7 @@ export interface CallLog {
   event_id: string;
   timestamp: string;
   caller_number: string;
-  caller_classification: 'SPAM' | 'LEGITIMATE';
+  caller_classification: 'SPAM' | 'PROBABLE SPAM' | 'PREFERABLE SPAM' | 'LEGITIMATE' | string;
   caller_name: string;
   receiver_name: string;
   receiver_number: string;

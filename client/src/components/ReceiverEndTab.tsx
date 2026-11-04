@@ -72,7 +72,17 @@ export const ReceiverEndTab: React.FC<ReceiverEndTabProps> = ({
   const isIncoming = callStatus === 'Ringing' || callStatus === 'Calling';
   const isConnected = callStatus === 'Connected';
   const isDisconnected = callStatus === 'Disconnected' || callStatus === 'Rejected';
-  const isSpam = activeCall?.callerClassification === 'SPAM' || activeCall?.isSpam;
+  const isSpam = Boolean(
+    activeCall?.isSpam === true ||
+    (activeCall?.callerClassification &&
+      (activeCall.callerClassification.toUpperCase().includes('SPAM') ||
+       activeCall.callerClassification.toUpperCase().includes('PROBABLE') ||
+       activeCall.callerClassification.toUpperCase().includes('PREFERABLE'))) ||
+    (activeCall?.reputationStatus &&
+      (activeCall.reputationStatus.toUpperCase().includes('SPAM') ||
+       activeCall.reputationStatus.toUpperCase().includes('PROBABLE') ||
+       activeCall.reputationStatus.toUpperCase().includes('THREAT')))
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -244,7 +254,7 @@ export const ReceiverEndTab: React.FC<ReceiverEndTabProps> = ({
                     }}
                   >
                     <ShieldAlert size={18} color="#ef4444" />
-                    <span>🚨 SPAM WARNING: Threat Detected!</span>
+                    <span>🚨 PROBABLE SPAM: Suspected Threat Detected!</span>
                   </div>
                 ) : (
                   <div
@@ -296,7 +306,7 @@ export const ReceiverEndTab: React.FC<ReceiverEndTabProps> = ({
                   {activeCall ? activeCall.callerNumber : '+1-800-555-0191'}
                 </div>
                 <div style={{ fontSize: '11px', color: isSpam ? '#f87171' : '#4ade80', fontWeight: 600, marginTop: '4px' }}>
-                  {activeCall ? activeCall.category : (isSpam ? 'Suspected Spam' : 'Incoming Call')}
+                  {activeCall ? activeCall.category : (isSpam ? 'Probable Spam' : 'Incoming Call')}
                 </div>
 
                 {/* In-Call Controls when Connected */}
@@ -512,10 +522,10 @@ export const ReceiverEndTab: React.FC<ReceiverEndTabProps> = ({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#15803d', fontWeight: 800, fontSize: '15px' }}>
                   <CheckCircle2 size={20} />
-                  <span>Warning: A spam call was detected and disconnected. Your parent/family member has been notified.</span>
+                  <span>Warning: A probable spam call was detected and disconnected. Your parent/family member has been notified.</span>
                 </div>
                 <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#166534', lineHeight: 1.5 }}>
-                  The telecom security firewall intercepted the spam call targeting this child line. An automated
+                  The telecom security firewall intercepted the probable spam call targeting this child line. An automated
                   priority safety alert has been accepted by the SMTP mail gateway and dispatched to linked guardians.
                 </p>
               </div>
@@ -531,7 +541,7 @@ export const ReceiverEndTab: React.FC<ReceiverEndTabProps> = ({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b91c1c', fontWeight: 800, fontSize: '15px' }}>
                   <XCircle size={20} />
-                  <span>Warning: A spam call was detected and disconnected. Email delivery status: Email failed.</span>
+                  <span>Warning: A probable spam call was detected and disconnected. Email delivery status: Email failed.</span>
                 </div>
                 <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#991b1b', lineHeight: 1.5 }}>
                   {activeCall?.details || 'Email alert delivery encountered an SMTP configuration or connection error.'}
@@ -549,7 +559,7 @@ export const ReceiverEndTab: React.FC<ReceiverEndTabProps> = ({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b45309', fontWeight: 800, fontSize: '14.5px' }}>
                   <AlertTriangle size={18} />
-                  <span>Warning: A spam call was detected and disconnected. (SMTP Not Configured)</span>
+                  <span>Warning: A probable spam call was detected and disconnected. (SMTP Not Configured)</span>
                 </div>
                 <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#92400e', lineHeight: 1.5 }}>
                   Carrier SMS simulation recorded. Provide Gmail SMTP credentials in .env to dispatch live guardian emails.

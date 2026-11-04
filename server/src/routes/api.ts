@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { excelService } from '../excelService.js';
+import { excelService, matchPhoneNumbers } from '../excelService.js';
 import { emailService } from '../emailService.js';
 import { smsService } from '../smsService.js';
 import { spamEngine } from '../spamEngine.js';
@@ -230,18 +230,24 @@ apiRouter.delete('/spam-numbers/:id', async (req: Request, res: Response) => {
 // --- CALL GENERATION & INTERACTIVE CALLS ---
 apiRouter.post('/calls/initiate', async (req: Request, res: Response) => {
   try {
-    const { callerNumber, callerName, receiverNumber, receiverId } = req.body;
+    const {
+      callerNumber,
+      callerName,
+      receiverNumber,
+      receiverId,
+      isSpam: clientIsSpam,
+      category: clientCategory,
+      reputationStatus: clientReputationStatus,
+      callerClassification: clientClassification,
+    } = req.body;
+
     if (!callerNumber || !receiverNumber) {
       return res.status(400).json({ success: false, error: 'Caller number and receiver number are required.' });
     }
 
-    const cleanCaller = callerNumber.replace(/[^0-9]/g, '');
-
     // Look up spam database
     const spamRecords = await excelService.getSpamNumbers();
-    const matchedSpam = spamRecords.find(
-      (s) => s.phone_number.replace(/[^0-9]/g, '') === cleanCaller
-    );
+    const matchedSpam = spamRecords.find((s) => matchPhoneNumbers(s.phone_number, callerNumber));
 
     let isSpam = false;
     let resolvedCallerName = callerName || 'Unknown Caller';
@@ -250,11 +256,38 @@ apiRouter.post('/calls/initiate', async (req: Request, res: Response) => {
     let reputationStatus = 'LEGITIMATE';
 
     if (matchedSpam) {
-      isSpam = matchedSpam.is_spam;
-      resolvedCallerName = callerName || matchedSpam.caller_name;
+      isSpam = Boolean(matchedSpam.is_spam);
+      resolvedCallerName = callerName && callerName !== 'Probable Spam Caller' ? callerName : matchedSpam.caller_name;
       spamCategory = matchedSpam.category;
       riskScore = matchedSpam.risk_score;
-      reputationStatus = matchedSpam.reputation_status;
+      reputationStatus = isSpam ? 'PROBABLE SPAM' : 'LEGITIMATE';
+    } else if (
+      clientIsSpam === true ||
+      (clientClassification && (clientClassification.toUpperCase().includes('SPAM') || clientClassification.toUpperCase().includes('PROBABLE'))) ||
+      (clientReputationStatus && (clientReputationStatus.toUpperCase().includes('SPAM') || clientReputationStatus.toUpperCase().includes('PROBABLE')))
+    ) {
+      isSpam = true;
+      resolvedCallerName = callerName || 'Probable Spam Caller';
+      spamCategory = clientCategory || 'Robocall Auto-Dialer';
+      riskScore = 88;
+      reputationStatus = 'PROBABLE SPAM';
+    } else {
+      // Heuristic fallback: toll-free numbers
+      const cleanDigits = callerNumber.replace(/[^0-9]/g, '');
+      const last10 = cleanDigits.slice(-10);
+      if (
+        last10.startsWith('800') ||
+        last10.startsWith('888') ||
+        last10.startsWith('877') ||
+        last10.startsWith('866') ||
+        last10.startsWith('855')
+      ) {
+        isSpam = true;
+        resolvedCallerName = callerName && callerName !== 'Unknown Caller' ? callerName : 'Probable Spam Caller';
+        spamCategory = 'Robocall Auto-Dialer';
+        riskScore = 85;
+        reputationStatus = 'PROBABLE SPAM';
+      }
     }
 
     // Look up receiver subscriber (prioritize unique receiverId)
@@ -280,10 +313,11 @@ apiRouter.post('/calls/initiate', async (req: Request, res: Response) => {
         eventId,
         callerNumber,
         callerName: resolvedCallerName,
-        callerClassification: isSpam ? 'SPAM' : 'LEGITIMATE',
+        isSpam: Boolean(isSpam),
+        callerClassification: isSpam ? 'PROBABLE SPAM' : 'LEGITIMATE',
         riskScore,
         category: spamCategory,
-        reputationStatus,
+        reputationStatus: isSpam && (!reputationStatus || reputationStatus === 'SUSPECTED SPAM' || reputationStatus === 'PREFERABLE SPAM') ? 'PROBABLE SPAM' : reputationStatus,
         receiverId: receiverSub ? receiverSub.subscriber_id : receiverId,
         receiverNumber,
         receiverName,
@@ -322,7 +356,10 @@ apiRouter.post('/calls/disconnect', async (req: Request, res: Response) => {
     const finalEventId = eventId || `EVT-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const finalCallStatus: CallStatus = callStatus === 'Rejected' ? 'Rejected' : 'Disconnected';
     const finalDuration = duration !== undefined ? Number(duration) : 0;
-    const isSpam = (callerClassification || '').toUpperCase() === 'SPAM';
+    const isSpam = Boolean(
+      (callerClassification || '').toUpperCase().includes('SPAM') ||
+      (callerClassification || '').toUpperCase().includes('PROBABLE')
+    );
 
     // Look up receiver subscriber (prioritize unique receiverId)
     let receiverSub: Subscriber | undefined;
@@ -378,7 +415,7 @@ apiRouter.post('/calls/disconnect', async (req: Request, res: Response) => {
           child_name: receiverSub!.name,
           caller_number: callerNumber,
           child_phone: receiverSub!.phone_number,
-          spam_classification: `${callerName || 'Spam Call'} (Threat Intercepted)`,
+          spam_classification: `${callerName || 'Probable Spam Call'} (Suspected Threat Intercepted)`,
           event_time: new Date().toLocaleString(),
         });
 
@@ -398,14 +435,14 @@ apiRouter.post('/calls/disconnect', async (req: Request, res: Response) => {
             child_name: receiverSub!.name,
             caller_number: callerNumber,
             child_phone: receiverSub!.phone_number,
-            spam_classification: callerName || 'Spam Call',
+            spam_classification: callerName || 'Probable Spam Call',
             event_time: new Date().toLocaleString(),
           });
           smsStatus = smsResult.status;
         }
 
         decision = 'PARENT ALERTS SENT (SMS + EMAIL)';
-        details = `Spam call disconnected. Guardian safety notification dispatched to ${parentEmails.join(', ')} (Status: ${emailStatus})`;
+        details = `Probable spam call disconnected. Guardian safety notification dispatched to ${parentEmails.join(', ')} (Status: ${emailStatus})`;
       } else {
         decision = 'PARENT ALERT SKIPPED (NO VALID GUARDIAN EMAIL)';
         details = `Child has no linked parents with active email addresses enabled for alerts.`;

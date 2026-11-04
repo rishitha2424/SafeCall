@@ -3,7 +3,6 @@ import {
   Baby,
   UserCheck,
   ShieldAlert,
-  Send,
   CheckCircle2,
   AlertOctagon,
   ArrowRight,
@@ -48,18 +47,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       subtext: 'Linked authorized guardians',
     },
     {
-      label: 'Spam Calls Simulated',
+      label: 'Probable Spam Calls Simulated',
       value: stats.spamCallsSimulated,
       icon: <ShieldAlert size={24} color="#dc2626" />,
       bg: '#fee2e2',
-      subtext: 'Threats flagged by engine',
-    },
-    {
-      label: 'Parent Alerts Triggered',
-      value: stats.parentAlertsTriggered,
-      icon: <Send size={24} color="#2563eb" />,
-      bg: '#dbeafe',
-      subtext: 'Minor defense events',
+      subtext: 'Suspected threats flagged by engine',
     },
     {
       label: 'Accepted by SMTP',

@@ -19,9 +19,9 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
-  // Filter spam threat notifications
+  // Filter probable spam threat notifications
   const threatNotifications = callLogs.filter(
-    (l) => l.caller_classification === 'SPAM' || l.decision.includes('PARENT ALERT')
+    (l) => l.caller_classification?.includes('SPAM') || l.decision.includes('PARENT ALERT')
   );
 
   return (
@@ -209,7 +209,7 @@ export const Header: React.FC<HeaderProps> = ({
                               borderRadius: '4px',
                             }}
                           >
-                            🚨 SPAM INTERCEPTED
+                            🚨 PROBABLE SPAM INTERCEPTED
                           </span>
                           <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>
                             {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -217,7 +217,7 @@ export const Header: React.FC<HeaderProps> = ({
                         </div>
 
                         <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--primary-950)' }}>
-                          {log.caller_name || 'Spam Caller'} ({log.caller_number})
+                          {log.caller_name || 'Probable Spam Caller'} ({log.caller_number})
                         </div>
 
                         <div style={{ fontSize: '11.5px', color: '#475569' }}>

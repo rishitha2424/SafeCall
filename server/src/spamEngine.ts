@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { excelService } from './excelService.js';
+import { excelService, matchPhoneNumbers } from './excelService.js';
 import { emailService } from './emailService.js';
 import { smsService } from './smsService.js';
 import {
@@ -53,11 +53,7 @@ export class SpamCallProcessingEngine {
 
     // --- STEP 2: Spam Classification Checked ---
     const spamRecords = await excelService.getSpamNumbers();
-    const cleanCaller = rawCallerNumber.replace(/[^0-9]/g, '');
-
-    const matchingSpam = spamRecords.find(
-      (s) => s.phone_number.replace(/[^0-9]/g, '') === cleanCaller
-    );
+    const matchingSpam = spamRecords.find((s) => matchPhoneNumbers(s.phone_number, rawCallerNumber));
 
     let isSpam = false;
     let callerName = payload.callerName || 'Unknown Caller';
@@ -87,14 +83,14 @@ export class SpamCallProcessingEngine {
       riskScore = 15;
     }
 
-    const callerClassification: 'SPAM' | 'LEGITIMATE' = isSpam ? 'SPAM' : 'LEGITIMATE';
+    const callerClassification: 'SPAM' | 'PROBABLE SPAM' | 'PREFERABLE SPAM' | 'LEGITIMATE' = isSpam ? 'PROBABLE SPAM' : 'LEGITIMATE';
 
     steps.push({
       stepIndex: 2,
       title: 'Spam Classification Evaluated',
       status: isSpam ? 'WARNING' : 'SUCCESS',
       description: isSpam
-        ? `CLASSIFIED AS SPAM (${spamCategory}, Risk Score: ${riskScore}/100)`
+        ? `CLASSIFIED AS PROBABLE SPAM (${spamCategory}, Risk Score: ${riskScore}/100)`
         : `CLASSIFIED AS LEGITIMATE (${callerName || 'Safe caller'}, Risk: ${riskScore}/100)`,
       data: {
         callerName,

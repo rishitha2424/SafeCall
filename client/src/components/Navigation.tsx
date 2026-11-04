@@ -46,7 +46,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     },
     {
       id: 'spam-caller',
-      label: 'Spam Caller',
+      label: 'Probable Spam Caller',
       icon: <PhoneCall size={17} />,
       badge: 'Dialer',
     },

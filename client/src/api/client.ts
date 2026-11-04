@@ -206,6 +206,10 @@ export const api = {
     callerName?: string;
     receiverNumber: string;
     receiverId?: string;
+    isSpam?: boolean;
+    category?: string;
+    reputationStatus?: string;
+    callerClassification?: string;
   }): Promise<{ success: boolean; session: any }> {
     const res = await fetch(`${BASE_URL}/calls/initiate`, {
       method: 'POST',

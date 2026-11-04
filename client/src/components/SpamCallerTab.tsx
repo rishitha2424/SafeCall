@@ -26,12 +26,53 @@ interface SpamCallerTabProps {
   spamNumbers: SpamNumber[];
   activeCall: any | null;
   callTimer: number;
-  onInitiateCall: (callerNumber: string, callerName: string, receiverNumber: string, receiverId?: string) => Promise<void>;
+  onInitiateCall: (
+    callerNumber: string,
+    callerName: string,
+    receiverNumber: string,
+    receiverId?: string,
+    isSpam?: boolean,
+    category?: string,
+    reputationStatus?: string
+  ) => Promise<void>;
   onEndCall: () => Promise<void>;
   onSwitchToReceiver: () => void;
   onRefreshData: () => void;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', msg: string) => void;
 }
+
+const SPAM_THREAT_CATEGORIES = [
+  'IRS / Tax Impersonator',
+  'Bank / Financial Phishing',
+  'Robocall Auto-Dialer',
+  'Tech Support Scam',
+  'Lottery / Sweepstakes Fraud',
+  'Telemarketer / Sales Pitch',
+  'Healthcare / Insurance Scam',
+  'Debt Collection Threat',
+  'Custom / Other Threat',
+];
+
+const LEGITIMATE_CALLER_CATEGORIES = [
+  'Family / Personal Contact',
+  'School / Educational Institution',
+  'Healthcare / Pediatric Clinic',
+  'Emergency Services',
+  'Official / Utility Organization',
+  'Trusted Community Contact',
+  'Custom / Other Caller',
+];
+
+const matchPhoneNumbers = (p1?: string, p2?: string): boolean => {
+  if (!p1 || !p2) return false;
+  const c1 = p1.replace(/[^0-9]/g, '');
+  const c2 = p2.replace(/[^0-9]/g, '');
+  if (!c1 || !c2) return false;
+  if (c1 === c2) return true;
+  if (c1.length >= 10 && c2.length >= 10 && c1.slice(-10) === c2.slice(-10)) return true;
+  if (c1.length >= 7 && c2.length >= 7 && (c1.endsWith(c2) || c2.endsWith(c1))) return true;
+  return false;
+};
 
 export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
   subscribers,
@@ -109,15 +150,21 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
   }, [activeCall?.callStatus]);
 
   // Derived caller reputation from typed dialer number
-  const cleanDialer = dialerNumber.replace(/[^0-9]/g, '');
-  const matchedEntry = spamNumbers.find(
-    (s) => s.phone_number.replace(/[^0-9]/g, '') === cleanDialer
-  );
+  const matchedEntry = spamNumbers.find((s) => matchPhoneNumbers(s.phone_number, dialerNumber));
 
-  const isDetectedSpam = matchedEntry ? matchedEntry.is_spam : dialerNumber.startsWith('+1-800') || dialerNumber.startsWith('+1-888');
+  const cleanDigits = dialerNumber.replace(/[^0-9]/g, '');
+  const last10 = cleanDigits.slice(-10);
+  const isTollFree =
+    last10.startsWith('800') ||
+    last10.startsWith('888') ||
+    last10.startsWith('877') ||
+    last10.startsWith('866') ||
+    last10.startsWith('855');
+
+  const isDetectedSpam = matchedEntry ? matchedEntry.is_spam : isTollFree;
   const detectedRisk = matchedEntry ? matchedEntry.risk_score : isDetectedSpam ? 88 : 10;
-  const detectedCategory = matchedEntry ? matchedEntry.category : isDetectedSpam ? 'Robocall Telemarketer' : 'Standard Line';
-  const detectedReputation = matchedEntry ? matchedEntry.reputation_status : isDetectedSpam ? 'SUSPECTED SPAM' : 'LEGITIMATE';
+  const detectedCategory = matchedEntry ? matchedEntry.category : isDetectedSpam ? 'Robocall Auto-Dialer' : 'Standard Line';
+  const detectedReputation = matchedEntry ? matchedEntry.reputation_status : isDetectedSpam ? 'PROBABLE SPAM' : 'LEGITIMATE';
 
   // Selected receiver subscriber details (uniquely resolved by subscriber_id)
   const matchedReceiver =
@@ -138,10 +185,31 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
     setDialerNumber('');
   };
 
-  // Dial preset selector
-  const handleSelectPreset = (spam: SpamNumber) => {
-    setDialerNumber(spam.phone_number);
-    setCallerName(spam.caller_name);
+  // Dial preset selector: loads preset number and immediately starts the call (auto-transitions to receiver tab)
+  const handleSelectPreset = async (spam: SpamNumber) => {
+    const dialed = spam.phone_number.trim();
+    const cName = spam.caller_name.trim();
+    setDialerNumber(dialed);
+    setCallerName(cName);
+
+    if (!selectedReceiverNumber.trim()) {
+      showToast('error', 'Please select or enter a recipient subscriber line.');
+      return;
+    }
+
+    try {
+      await onInitiateCall(
+        dialed,
+        cName || (spam.is_spam ? 'Probable Spam Caller' : 'Verified Line'),
+        selectedReceiverNumber.trim(),
+        selectedReceiverId,
+        spam.is_spam,
+        spam.category,
+        spam.reputation_status
+      );
+    } catch (err: any) {
+      showToast('error', err.message || 'Call initiation failed');
+    }
   };
 
   // Initiate call
@@ -159,9 +227,12 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
     try {
       await onInitiateCall(
         dialerNumber.trim(),
-        callerName || (matchedEntry ? matchedEntry.caller_name : 'Unknown Caller'),
+        callerName || (matchedEntry ? matchedEntry.caller_name : (isDetectedSpam ? 'Probable Spam Caller' : 'Unknown Caller')),
         selectedReceiverNumber.trim(),
-        selectedReceiverId
+        selectedReceiverId,
+        isDetectedSpam,
+        detectedCategory,
+        detectedReputation
       );
     } catch (err: any) {
       showToast('error', err.message || 'Call initiation failed');
@@ -184,12 +255,16 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
     }
 
     try {
+      const payload = {
+        ...editingSpamData,
+        reputation_status: editingSpamData.is_spam ? 'PROBABLE SPAM' : 'LEGITIMATE',
+      };
       if (isNewSpam) {
-        await api.addSpamNumber(editingSpamData);
-        showToast('success', `Added ${editingSpamData.phone_number} to Excel database.`);
+        await api.addSpamNumber(payload);
+        showToast('success', `Added ${payload.phone_number} to Excel database.`);
       } else if (editingSpamData.spam_id) {
-        await api.updateSpamNumber(editingSpamData.spam_id, editingSpamData);
-        showToast('success', `Updated ${editingSpamData.phone_number} in Excel database.`);
+        await api.updateSpamNumber(editingSpamData.spam_id, payload);
+        showToast('success', `Updated ${payload.phone_number} in Excel database.`);
       }
       setIsEditingSpam(false);
       onRefreshData();
@@ -217,9 +292,9 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
     setEditingSpamData({
       phone_number: '+1-',
       caller_name: '',
-      category: asSpam ? 'IRS Impersonator' : 'Family / Verified Line',
+      category: asSpam ? 'IRS / Tax Impersonator' : 'Family / Personal Contact',
       risk_score: asSpam ? 88 : 5,
-      reputation_status: asSpam ? 'SUSPECTED SPAM' : 'LEGITIMATE',
+      reputation_status: asSpam ? 'PROBABLE SPAM' : 'LEGITIMATE',
       is_spam: asSpam,
       notes: asSpam ? 'Reported nuisance caller' : 'Verified safe caller',
     });
@@ -309,7 +384,7 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
               }}
             >
               <span>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              <span style={{ color: '#ef4444', fontWeight: 700 }}>Spam Origin Line</span>
+              <span style={{ color: '#ef4444', fontWeight: 700 }}>Probable Spam Line</span>
               <span>100% 🔋</span>
             </div>
 
@@ -593,7 +668,7 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
                 className={`chip ${isDetectedSpam ? 'chip-spam' : 'chip-legit'}`}
                 style={{ fontSize: '12px', padding: '6px 14px', fontWeight: 800 }}
               >
-                {isDetectedSpam ? '🚨 SPAM' : '✅ LEGITIMATE'}
+                {isDetectedSpam ? '🚨 PROBABLE SPAM' : '✅ LEGITIMATE'}
               </span>
             </div>
 
@@ -632,7 +707,7 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
                   Threat Classification
                 </span>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: isDetectedSpam ? '#dc2626' : '#15803d', marginTop: '2px' }}>
-                  {isDetectedSpam ? 'SPAM (Threat Intercepted)' : 'LEGITIMATE (Safe Caller)'}
+                  {isDetectedSpam ? 'PROBABLE SPAM (Suspected Threat)' : 'LEGITIMATE (Safe Caller)'}
                 </div>
               </div>
 
@@ -730,7 +805,7 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>
-                  Reputation Database (Spam & Legitimate Numbers)
+                  Reputation Database (Probable Spam & Legitimate Numbers)
                 </h3>
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   Manage numbers stored in the Excel SpamNumbers sheet.
@@ -743,7 +818,7 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
                   className="btn btn-outline-danger"
                   style={{ padding: '6px 12px', fontSize: '12.5px' }}
                 >
-                  <Plus size={14} /> Add Spam Number
+                  <Plus size={14} /> Add Probable Spam Number
                 </button>
                 <button
                   onClick={() => handleOpenAddSpam(false)}
@@ -776,7 +851,7 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
                 style={{ width: 'auto', fontSize: '12.5px' }}
               >
                 <option value="ALL">All Entries ({spamNumbers.length})</option>
-                <option value="SPAM">Spam Only ({spamNumbers.filter((s) => s.is_spam).length})</option>
+                <option value="SPAM">Probable Spam Only ({spamNumbers.filter((s) => s.is_spam).length})</option>
                 <option value="LEGITIMATE">Legitimate Only ({spamNumbers.filter((s) => !s.is_spam).length})</option>
               </select>
             </div>
@@ -810,7 +885,7 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
                         <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{sp.category}</td>
                         <td>
                           <span className={`chip ${sp.is_spam ? 'chip-spam' : 'chip-legit'}`} style={{ fontSize: '10.5px' }}>
-                            {sp.is_spam ? 'SPAM' : 'LEGIT'}
+                            {sp.is_spam ? 'PROBABLE SPAM' : 'LEGIT'}
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
@@ -818,10 +893,10 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
                             <button
                               onClick={() => handleSelectPreset(sp)}
                               className="btn btn-secondary"
-                              style={{ padding: '3px 8px', fontSize: '11px' }}
-                              title="Load into dialer"
+                              style={{ padding: '3px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              title="Dial and call immediately (switches to Receiver End tab)"
                             >
-                              Dial
+                              <PhoneCall size={11} /> Dial & Call
                             </button>
                             <button
                               onClick={() => handleOpenEditSpam(sp)}
@@ -888,22 +963,23 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
                         ...editingSpamData,
                         is_spam: isSpam,
                         risk_score: isSpam ? 85 : 5,
-                        reputation_status: isSpam ? 'SUSPECTED SPAM' : 'LEGITIMATE',
+                        reputation_status: isSpam ? 'PROBABLE SPAM' : 'LEGITIMATE',
+                        category: isSpam ? 'IRS / Tax Impersonator' : 'Family / Personal Contact',
                       });
                     }}
                   >
-                    <option value="SPAM">SPAM (Threat / Robocall)</option>
+                    <option value="SPAM">PROBABLE SPAM (Suspected Threat / Robocall)</option>
                     <option value="LEGITIMATE">LEGITIMATE (Verified / Safe)</option>
                   </select>
                 </div>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Caller Name / Company:</label>
+                <label className="form-label">Caller Name / Organization:</label>
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g. IRS Tax Audit Threats"
+                  placeholder={editingSpamData.is_spam ? 'e.g. IRS Tax Audit Threats' : 'e.g. Lincoln Middle School'}
                   value={editingSpamData.caller_name}
                   onChange={(e) => setEditingSpamData({ ...editingSpamData, caller_name: e.target.value })}
                   required
@@ -911,25 +987,50 @@ export const SpamCallerTab: React.FC<SpamCallerTabProps> = ({
               </div>
 
               <div className="form-group">
-                <label className="form-label">Threat Category:</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="e.g. Tech Support Scam"
-                  value={editingSpamData.category}
-                  onChange={(e) => setEditingSpamData({ ...editingSpamData, category: e.target.value })}
-                />
-              </div>
+                <label className="form-label">
+                  {editingSpamData.is_spam ? 'Threat Category:' : 'Caller Category:'}
+                </label>
+                <select
+                  className="form-select"
+                  value={
+                    (editingSpamData.is_spam ? SPAM_THREAT_CATEGORIES : LEGITIMATE_CALLER_CATEGORIES).includes(editingSpamData.category || '')
+                      ? (editingSpamData.category || '')
+                      : (editingSpamData.is_spam ? 'Custom / Other Threat' : 'Custom / Other Caller')
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.startsWith('Custom / Other')) {
+                      setEditingSpamData({ ...editingSpamData, category: '' });
+                    } else {
+                      setEditingSpamData({ ...editingSpamData, category: val });
+                    }
+                  }}
+                >
+                  {(editingSpamData.is_spam ? SPAM_THREAT_CATEGORIES : LEGITIMATE_CALLER_CATEGORIES).map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
 
-              <div className="form-group">
-                <label className="form-label">Reputation Status Label:</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="e.g. CRITICAL THREAT or LEGITIMATE"
-                  value={editingSpamData.reputation_status}
-                  onChange={(e) => setEditingSpamData({ ...editingSpamData, reputation_status: e.target.value })}
-                />
+                {/* Show custom input only if Custom / Other is chosen */}
+                {(!(editingSpamData.is_spam ? SPAM_THREAT_CATEGORIES : LEGITIMATE_CALLER_CATEGORIES)
+                  .filter((c) => !c.startsWith('Custom / Other'))
+                  .includes(editingSpamData.category || '')) && (
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder={
+                      editingSpamData.is_spam
+                        ? 'Type custom threat category...'
+                        : 'Type custom caller category...'
+                    }
+                    style={{ marginTop: '8px' }}
+                    value={editingSpamData.category || ''}
+                    onChange={(e) => setEditingSpamData({ ...editingSpamData, category: e.target.value })}
+                    required
+                  />
+                )}
               </div>
 
               <div className="form-group">

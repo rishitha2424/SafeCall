@@ -203,7 +203,7 @@ export const CallLogsTab: React.FC<CallLogsTabProps> = ({
               style={{ fontSize: '12.5px' }}
             >
               <option value="ALL">All Classifications</option>
-              <option value="SPAM">SPAM Threats Only</option>
+              <option value="SPAM">Probable Spam Only</option>
               <option value="LEGITIMATE">LEGITIMATE Calls Only</option>
             </select>
 
@@ -375,11 +375,11 @@ export const CallLogsTab: React.FC<CallLogsTabProps> = ({
                     <td>
                       <span
                         className={`chip ${
-                          log.caller_classification === 'SPAM' ? 'chip-spam' : 'chip-legit'
+                          log.caller_classification?.includes('SPAM') ? 'chip-spam' : 'chip-legit'
                         }`}
                         style={{ fontSize: '10.5px', padding: '3px 8px' }}
                       >
-                        {log.caller_classification === 'SPAM' ? '🚨 SPAM' : '✅ SAFE'}
+                        {log.caller_classification?.includes('SPAM') ? '🚨 PROBABLE SPAM' : '✅ SAFE'}
                       </span>
                     </td>
 

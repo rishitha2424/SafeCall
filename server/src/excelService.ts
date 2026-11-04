@@ -34,6 +34,17 @@ class AsyncLock {
 
 const fileLock = new AsyncLock();
 
+export function matchPhoneNumbers(p1?: string, p2?: string): boolean {
+  if (!p1 || !p2) return false;
+  const c1 = p1.replace(/[^0-9]/g, '');
+  const c2 = p2.replace(/[^0-9]/g, '');
+  if (!c1 || !c2) return false;
+  if (c1 === c2) return true;
+  if (c1.length >= 10 && c2.length >= 10 && c1.slice(-10) === c2.slice(-10)) return true;
+  if (c1.length >= 7 && c2.length >= 7 && (c1.endsWith(c2) || c2.endsWith(c1))) return true;
+  return false;
+}
+
 // Default email template
 export const DEFAULT_EMAIL_TEMPLATE: EmailTemplate = {
   template_id: 'TMPL-001',
@@ -770,8 +781,7 @@ export class ExcelService {
 
   async getSubscriberByPhone(phone: string): Promise<Subscriber | undefined> {
     const subs = await this.getSubscribers();
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-    return subs.find((s) => s.phone_number.replace(/[^0-9]/g, '') === cleanPhone);
+    return subs.find((s) => matchPhoneNumbers(s.phone_number, phone));
   }
 
   async saveSubscriber(subscriber: Subscriber): Promise<{ success: boolean; error?: string }> {

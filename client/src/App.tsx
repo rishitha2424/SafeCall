@@ -111,15 +111,27 @@ export const App: React.FC = () => {
     callerNumber: string,
     callerName: string,
     receiverNumber: string,
-    receiverId?: string
+    receiverId?: string,
+    isSpam?: boolean,
+    category?: string,
+    reputationStatus?: string
   ) => {
     setCallTimer(0);
-    const res = await api.initiateCall({ callerNumber, callerName, receiverNumber, receiverId });
+    const res = await api.initiateCall({
+      callerNumber,
+      callerName,
+      receiverNumber,
+      receiverId,
+      isSpam,
+      category,
+      reputationStatus,
+    });
     if (res.success && res.session) {
       setActiveCall(res.session);
+      setActiveTab('receiver-end');
       showToast(
         'info',
-        `Call ringing on ${res.session.receiverName}'s phone! Switch to Receiver End tab to answer or inspect.`
+        `Call ringing on ${res.session.receiverName}'s phone! Switched to Receiver End.`
       );
     }
   };
